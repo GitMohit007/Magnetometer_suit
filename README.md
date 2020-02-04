@@ -8,7 +8,7 @@ Steps:
 
 1: Upload the mag_test_moho code to arduino
 
-2: Run magn_do_calibration(Python27 Required!) using console and the following commands     can be used :
+2: Go to "avr_helper_magn_docalibration_01" , Run magn_do_calibration(Python27 Required!) using console and the following commands     can be used :
 
    "python magn_do_calibration.py -h" - for help
    
