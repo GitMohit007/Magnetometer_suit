@@ -13,9 +13,11 @@ Z_axis_H = 0x05  # Address of Z-axis MSB data register
 Y_axis_H = 0x07  # Address of Y-axis MSB data register
 declination = -0.00669  # define declination angle of location where measurement going to be done
 pi = 3.14159265359  # define pi value
-calibrated_values = [0,0,0]
+calibrated_values = [0, 0, 0]
 
 scaler_flag = False
+
+
 def Magnetometer_Init():
     # write to Configuration Register A
     bus.write_byte_data(Device_Address, Register_A, 0x70)
@@ -40,40 +42,42 @@ def read_raw_data(addr):
         value = value - 65536
     return value
 
+
 def getHeading():
     return [read_raw_data(X_axis_H)
-        ,read_raw_data(Y_axis_H)
-        ,read_raw_data(Z_axis_H)]
+        , read_raw_data(Y_axis_H)
+        , read_raw_data(Z_axis_H)]
 
-def transformation(uncalibrated_values):
+
+def transformation(x, y, z):
+    uncalibrated_values = [x, y, z]
     calib_matrix = [
         [0.083832, 0.001101, -0.010638],
         [0.001101, 0.096019, -0.018923],
         [-0.010638, -0.018923, 0.113036]
     ]
-    bias =[
+    bias = [
         11.008123,
         -22.149114,
         -1.271789
     ]
-    for i in range(0,3): uncalibrated_values[i] = uncalibrated_values[i]-bias[i]
-    result = [0,0,0]
-    for  i in range(0,3):
-        for  j in range(0,3):
-            result[i] +=calib_matrix[i][j]*uncalibrated_values[j]
-    #calibrated_values = result
+    for i in range(0, 3): uncalibrated_values[i] = uncalibrated_values[i] - bias[i]
+    result = [0, 0, 0]
+    for i in range(0, 3):
+        for j in range(0, 3):
+            result[i] += calib_matrix[i][j] * uncalibrated_values[j]
+    # calibrated_values = result
     return calibrated_values
 
-def vector_length_stabalization(uncalibrated_values,scaler_flag):
-    calibrated_values = [0,0,0]
+
+def vector_length_stabalization(x, y, z, scaler_flag):
+    calibrated_values = []
     normal_vector_length = None
-    if  scaler_flag:
-        calibrated_values=transformation(uncalibrated_values)
-        normal_vector_length = math.sqrt(
-            calibrated_values[0] **2 + calibrated_values[1] **2+
-            calibrated_values[2] **2)
+    if scaler_flag:
+        calibrated_values = transformation(x,y,z)
+        normal_vector_length = math.sqrt(calibrated_values[0] ** 2 + calibrated_values[1] ** 2 + calibrated_values[2] ** 2)
         scaler_flag = True
-    #calculate the current scaler
+    # calculate the current scaler
     scaler = normal_vector_length / math.sqrt(
         calibrated_values[0] * calibrated_values[0] + calibrated_values[1] * calibrated_values[1] + calibrated_values[
             2] * calibrated_values[2])
@@ -88,14 +92,14 @@ Device_Address = 0x1e  # HMC5883L magnetometer device address
 Magnetometer_Init()  # initialize HMC5883L magnetometer
 
 print(" Reading Heading Angle")
-scaler_flag=False
+scaler_flag = False
 
-def get_calibrated_Heading():
+while True:
 
     # Read Accelerometer raw value
     H = getHeading()
-    #calibration
-    H = vector_length_stabalization(H,scaler_flag)
+    # calibration
+    H = vector_length_stabalization(H[0], H[1], H[2], scaler_flag)
     heading = math.atan2(H[1], H[0]) + declination
     declinationAngle = 0.22
     heading += declinationAngle
@@ -108,5 +112,7 @@ def get_calibrated_Heading():
         heading -= 2 * pi
     # convert into angle
     heading_angle = int(heading * 180 / pi)
-    print("Heading Angle = %d°" % heading_angle)
-   # sleep(0.1)
+
+    # print("Heading Angle = %d°" % heading_angle)
+    print(H)
+    sleep(0.1)
