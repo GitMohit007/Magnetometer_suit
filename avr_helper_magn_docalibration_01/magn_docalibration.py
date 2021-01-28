@@ -13,11 +13,19 @@ import serial
 from struct import unpack, pack
 from optparse import OptionParser
 import time
+import pika
+import json
 
 from sys import stdout
 from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.pyplot as plt
 import numpy as np
+
+read_rmq = True
+#pika
+ip = "192.168.0.155"
+connection = None
+channel = None
 
 #serial port
 SERIALPORT = "COM21"
@@ -72,7 +80,40 @@ def ser_readuntil(untilchar, numchars):
 			#	buf = ""
 			#	bufnum = 0
 	return buf
-
+def read_pika(avaragesamples) :
+	dataret = [0.0, 0.0, 0.0]
+	if avaragesamples > 0:
+		datatot = [0.0, .0, 0.0, 0.0]
+		dataread = [0.0, 0.0, 0.0]
+		# repat read avaragesamples times and avarage values
+		for x in range(avaragesamples):
+			# read values
+			q = channel.basic_get(queue="MAG",auto_ack=True)
+			#channel.basic_nack(delivery_tag=q[0].delivery_tag, requeue=True)
+			i = 0
+			datanum = 0
+			try:
+				q = json.loads(q[-1])
+				q = [q['mx'],q['my'],q['mz']]
+			except:
+				q = [0.0, 0.0, 0.0]
+			dataread=[q['mx'],q['my'],q['mz']]
+			datatot[0] = datatot[0] + dataread[0]
+			datatot[1] = datatot[1] + dataread[1]
+			datatot[2] = datatot[2] + dataread[2]
+		dataret[0] = float(datatot[0]) / avaragesamples
+		dataret[1] = float(datatot[1]) / avaragesamples
+		dataret[2] = float(datatot[2]) / avaragesamples
+	else:
+		q = channel.basic_get(queue="MAG",auto_ack = True)
+		# channel.basic_nack(delivery_tag=q[0].delivery_tag, requeue=True)
+		try:
+			q = json.loads(q[-1])
+			q = [q['mx'], q['my'], q['mz']]
+			dataret = q
+		except:
+			dataret = [0.0, 0.0, 0.0]
+	return dataret
 #read data from chip
 def readdata(avaragesamples):
 	dataret = [0.0, 0.0, 0.0]
@@ -125,15 +166,19 @@ def readdata(avaragesamples):
 
 #collect points
 def collectpoints():
-	ser_flush()
+	if(not read_rmq):
+		ser_flush()
 
 	countpoints = 0
 	dataold = [0, 0, 0]
 	points = []
-	raw_input("move magn in every position to collect correct data, press any key to continue ")
+	input("move magn in every position to collect correct data, press any key to continue ")
 	while countpoints < TOTPOINTS:
 		#read data
-		data = readdata(0)
+		if(read_rmq):
+			data = read_pika(0)
+		else:
+			data = readdata(0)
 		#record only new values, and valid values (not 0)
 		if (data[0] == dataold[0] and data[1] == dataold[1] and data[2] == dataold[2]) or (data[0] == 0 and data[1] == 0 and data[2] == 0):
 			continue			
@@ -141,7 +186,7 @@ def collectpoints():
 		#collect points
 		points.append(data)
 		countpoints = countpoints + 1
-		stdout.write("\r  read %4d of %4d, get %4d, %4d, %4d" % (countpoints, TOTPOINTS, data[0], data[1], data[2]))
+		stdout.write("\r  read {ou1} of {ou2}, get {ou3}, {ou4}, {ou5}".format(ou1=countpoints, ou2=TOTPOINTS, ou3=data[0], ou4=data[1],ou5= data[2]))
 		stdout.flush()
 	stdout.write("\n")
 	stdout.flush()		
@@ -183,8 +228,8 @@ def plotpoints(x, y, z):
 	
 #main function			
 if __name__ == '__main__':
-	print "Magnetometer Calibration functions 01"
-	print ""
+	print("Magnetometer Calibration functions 01")
+	print("")
 	
 	parser = OptionParser()
 	parser.add_option("-d", "--debug", dest="opt_debug", action="store_true", help="debug output")
@@ -194,47 +239,93 @@ if __name__ == '__main__':
 	(options, args) = parser.parse_args()
 
 	if options.opt_debug:
-		print "Debug output"
-		
-		#set serial port
-		ser=serial.Serial(port=SERIALPORT, baudrate=SERIALBAUD , bytesize=serial.EIGHTBITS, parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE, timeout=1)
-		ser.close()
-		ser.open()
-		if ser.isOpen():
-			print ("Port " + ser.portstr + " opened")
-		
-			while 1:
-				data = readdata(0)
-				print "  read %d %d %d " % (data[0], data[1], data[2])
-				time.sleep(0.02)
-			
+		print("Debug output")
+		if(not read_rmq):
+			#set serial port
+			ser=serial.Serial(port=SERIALPORT, baudrate=SERIALBAUD , bytesize=serial.EIGHTBITS, parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE, timeout=1)
 			ser.close()
+			ser.open()
+			if ser.isOpen():
+				print ("Port " + ser.portstr + " opened")
+				while 1:
+					data = readdata(0)
+					print ("  read {ou1} {ou2} {ou3} ".format(ou1 = data[0], ou2 = data[1], ou3 = data[2]))
+					time.sleep(0.02)
+
+				ser.close()
+			else:
+				print ("Can not oper port")
 		else:
-			print ("Can not oper port")
+			# connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost'))
+			cred = pika.PlainCredentials('parry', 'parry')
+			connection = pika.BlockingConnection(pika.ConnectionParameters(host=ip,credentials=cred))
+			channel = connection.channel()
+			while 1:
+				data = read_pika(0)
+				# print(data)
+				print("  read {ou1} {ou2} {ou3} ".format(ou1=data[0], ou2=data[1], ou3=data[2]))
+				time.sleep(0.15)
+			connection.close()
 			
 	elif options.opt_get:
-		print "Collect data from chip"
-		
-		#set serial port
-		ser=serial.Serial(port=SERIALPORT, baudrate=SERIALBAUD , bytesize=serial.EIGHTBITS, parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE, timeout=1)
-		ser.close()
-		ser.open()
-		if ser.isOpen():
-			print ("Port " + ser.portstr + " opened")
-							
+		print("Collect data from chip")
+		if(not read_rmq):
+			#set serial port
+			ser=serial.Serial(port=SERIALPORT, baudrate=SERIALBAUD , bytesize=serial.EIGHTBITS, parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE, timeout=1)
+			ser.close()
+			ser.open()
+			if ser.isOpen():
+				print ("Port " + ser.portstr + " opened")
+
+				while 1:
+					#collect points
+					points = collectpoints()
+
+					#output points to file
+					out_file = open(OUTFILENAME,"w")
+					for i in range(0, TOTPOINTS):
+						s = str(points[i][0])+"\t"+str(points[i][1])+"\t"+str(points[i][2])+"\n"
+						out_file.write(s)
+					out_file.close()
+
+					#plot points
+					input("plot raw points, press any key to continue ")
+					x = []
+					y = []
+					z = []
+					for i in range(0, TOTPOINTS):
+						x.append(points[i][0])
+						y.append(points[i][1])
+						z.append(points[i][2])
+					plotpoints(x, y, z)
+
+					print("")
+					readkey = input("press any key to repeat reading, or X to exit ")
+					if readkey == "X" or readkey == "x":
+						break
+
+				ser.close()
+			else:
+				print ("Can not oper port")
+		else:
+
+			cred = pika.PlainCredentials('parry', 'parry')
+			connection = pika.BlockingConnection(pika.ConnectionParameters(host=ip, credentials=cred))
+			channel = connection.channel()
+			print("RMQ Port opened")
 			while 1:
-				#collect points
+				# collect points
 				points = collectpoints()
-				
-				#output points to file
-				out_file = open(OUTFILENAME,"w")
+
+				# output points to file
+				out_file = open(OUTFILENAME, "w")
 				for i in range(0, TOTPOINTS):
-					s = str(points[i][0])+"\t"+str(points[i][1])+"\t"+str(points[i][2])+"\n"
+					s = str(points[i][0]) + "\t" + str(points[i][1]) + "\t" + str(points[i][2]) + "\n"
 					out_file.write(s)
 				out_file.close()
-	
-				#plot points
-				raw_input("plot raw points, press any key to continue ")
+
+				# plot points
+				input("plot raw points, press any key to continue ")
 				x = []
 				y = []
 				z = []
@@ -243,18 +334,17 @@ if __name__ == '__main__':
 					y.append(points[i][1])
 					z.append(points[i][2])
 				plotpoints(x, y, z)
-	
-				print ""
-				readkey = raw_input("press any key to repeat reading, or X to exit ")
+
+				print("")
+				readkey = input("press any key to repeat reading, or X to exit ")
+
 				if readkey == "X" or readkey == "x":
+					connection.close()
 					break
-			
-			ser.close()
-		else:
-			print ("Can not oper port")
+			connection.close()
 	
 	elif options.opt_testcalib:
-		print "Test calibration data using input file %s for raw values" % OUTFILENAME
+		print("Test calibration data using input file {output} for raw values ".format(output= OUTFILENAME))
 		
 		x = []
 		y = []
@@ -275,7 +365,7 @@ if __name__ == '__main__':
 		in_file.close()
 		
 		#plot uncalibrated
-		raw_input("plot raw points, press any key to continue ")
+		input("plot raw points, press any key to continue ")
 		plotpoints(x, y, z)
 		
 		#hard iron correction (offset)
@@ -293,11 +383,11 @@ if __name__ == '__main__':
 			z[i] = m3[0] * tx + m3[1] * ty + m3[2] * tz
 		
 		#plot calibrated
-		raw_input("plot calibrated points, press any key to continue ")
+		input("plot calibrated points, press any key to continue ")
 		plotpoints(x, y, z)
 		
 		#write calibrated output file
-		print "write calibrated point to file %s" % OUTFILENAMECAL
+		print ("write calibrated point to file {output}".format(output=OUTFILENAMECAL))
 		out_file = open(OUTFILENAMECAL,"w")
 		for i in range(0,num_samples):
 			s = str(x[i])+"\t"+str(y[i])+"\t"+str(z[i])+"\n"
@@ -305,7 +395,7 @@ if __name__ == '__main__':
 		out_file.close()
 	
 	elif options.opt_plot:
-		print "Plot data, read data from input file %s" % OUTFILENAME
+		print("Plot data, read data from input file {outfile}".format(outfile= OUTFILENAME))
 	
 		x = []
 		y = []
@@ -326,7 +416,7 @@ if __name__ == '__main__':
 		in_file.close()
 
 		#plot points
-		raw_input("plot raw points, press any key to continue ")
+		input("plot raw points, press any key to continue ")
 		plotpoints(x, y, z)
 	
 	else:

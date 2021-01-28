@@ -12,3 +12,7 @@ To obtain Gravitaion Field (raw format):
        Gain (LSB/Gauss) = 1090
        Raw Total Field = Gain * Total Field
        0.47241 * 1090 = ~515
+
+last test vals :
+41,818.4 nT
+ ~ 455
